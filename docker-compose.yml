@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  peer1:
+    container_name: peer1
+    build: .
+    command: python /app/main.py
+    restart: on-failure
+    ports:
+      - 15001:15001
+    environment:
+      - PEER_ID=1
+      - PEER_HOST=peer1
+      - PEER_PORT=15001
+    volumes:
+      - .:/app:ro
+  peer2:
+    container_name: peer2
+    build: .
+    command: python /app/main.py
+    restart: on-failure
+    ports:
+      - 15002:15002
+    environment:
+      - PEER_ID=2
+      - PEER_HOST=peer2
+      - PEER_PORT=15002
+    volumes:
+      - .:/app:ro
+  peer3:
+    container_name: peer3
+    build: .
+    command: python /app/main.py
+    restart: on-failure
+    ports:
+      - 15003:15003
+    environment:
+      - PEER_ID=3
+      - PEER_HOST=peer3
+      - PEER_PORT=15003
+    volumes:
+      - .:/app:ro
