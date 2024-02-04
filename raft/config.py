@@ -1,7 +1,7 @@
 import os
 
-NODE_ID = os.getenv('PEER_ID')
-NODE_PORT = os.getenv('PEER_PORT')
+NODE_ID = int(os.getenv('PEER_ID'))
+NODE_PORT = int(os.getenv('PEER_PORT'))
 
 PEERS = [
     (1, "peer1", 15001),
