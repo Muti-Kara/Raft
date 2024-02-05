@@ -13,7 +13,7 @@ services:
       - PEER_HOST=peer1
       - PEER_PORT=15001
     volumes:
-      - .:/app:ro
+      - .:/app
   peer2:
     container_name: peer2
     build: .
@@ -26,7 +26,7 @@ services:
       - PEER_HOST=peer2
       - PEER_PORT=15002
     volumes:
-      - .:/app:ro
+      - .:/app
   peer3:
     container_name: peer3
     build: .
@@ -39,4 +39,4 @@ services:
       - PEER_HOST=peer3
       - PEER_PORT=15003
     volumes:
-      - .:/app:ro
+      - .:/app
