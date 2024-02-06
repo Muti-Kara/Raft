@@ -1,126 +1,151 @@
-import threading
-import random
-
-import raft.config as rc
+from raft.utils import FunctionTimer
+import raft.config as config
 
 
 class State():
-    def __init__(self, node) -> None:
-        self.node = node
-        self.interval = rc.ELECTION_TIMEOUT
-        self._set_timer()
-
-    def _set_timer(self):
-        self.timer = threading.Timer(random.randint(self.interval, 2 * self.interval) / 1000, self.on_expire)
-        self.timer.start()
+    def __init__(self, node, timeout) -> None:
+        from raft.node import RaftNode
+        self.node: RaftNode = node
+        self.node.state = self # Otherwise in Candidate __init__ node still is in Follower state
+        self.timer = FunctionTimer(timeout, self.on_expire)
 
     def on_expire(self):
         raise NotImplementedError
 
-    def on_append_entry(self, append_entry):
+    def on_append_entry(self, ae: dict):
         raise NotImplementedError
 
-    def on_request_vote(self, request_vote):
+    def on_request_vote(self, rv: dict):
         raise NotImplementedError
 
 
 class Follower(State):
     def __init__(self, node) -> None:
-        super().__init__(node)
-        print(f"Node {rc.NODE_ID} has entered Follower State", flush=True)
+        super().__init__(node, config.ELECTION_TIMEOUT)
 
     def on_expire(self):
-        self.node.state = Candidate(self.node)
+        Candidate(self.node)
 
-    def on_append_entry(self, current_term, append_entry):
-        if current_term > append_entry["term"]:
-            return {"term": current_term, "success": False}
-        if current_term < append_entry["term"]:
-            self.node.db.update_node(append_entry["term"])
-        if self.node.db.get_logs()[append_entry['previousLogIndex']][0] == append_entry['previousLogTerm']:
-            self.timer.cancel()
-            self._set_timer()
-            return {"term": current_term, "success": True}
-        return {"term": current_term, "success": False}
+    def on_append_entry(self, ae: dict):
+        if self.node.data.current_term > ae["term"]:
+            return False
 
-    def on_request_vote(self, current_term, voted_for, request_vote):
-        if current_term > request_vote["term"] or voted_for != -1:
-            return {"term": current_term, "voteGranted": False}
-        self.node.db.update_node(current_term, request_vote['candidateId'])
-        self.timer.cancel()
-        self._set_timer()
-        return {"term": current_term, "voteGranted": True}
+        if self.node.data.current_term < ae["term"]:
+            self.node.data.current_term = ae["term"]
+            return True
+
+        if self.node.data.logs[ae['previousLogIndex']].term != ae['previousLogTerm']:
+            return False
+
+        self.timer.reset()
+        return True
+
+    def on_request_vote(self, rv: dict):
+        if self.node.data.current_term < rv["term"]:
+            self.node.data.current_term = rv["term"]
+            self.node.data.voted_for = -1
+
+        if self.node.data.current_term > rv["term"]:
+            return False
+        if self.node.data.voted_for != -1:
+            return False
+        if self.node.data.logs[-1].term > rv["lastLogTerm"]:
+            return False
+        if len(self.node.data.logs) > rv["lastLogIndex"]:
+            return False
+
+        self.node.data.voted_for = rv['candidateId']
+        self.timer.reset()
+        return True
 
 
 class Candidate(State):
     def __init__(self, node) -> None:
-        super().__init__(node)
-        self.node.db.update_node(current_term = self.node.db.get_state()[0] + 1)
-        self.vote_count = 1
-        self.vote_target = (len(rc.PEERS) / 2) + 1
-        print(f"Node {rc.NODE_ID} has entered Candidate State", flush=True)
+        super().__init__(node, config.ELECTION_TIMEOUT)
 
-        for _, peer in self.node.get_peers():
-            self.vote_count += peer.request_vote(self.node.request_vote_dict())
-            if self.vote_count > self.vote_target:
-                self.timer.cancel()
-                self.node.state = Leader(self.node)
+        self.node.data.current_term += 1
+        self.node.data.voted_for = self.node.id
+        self.voters = set([self.node.id])
+        self.vote_target = (len(config.PEERS) // 2) + 1
+
+        request_vote_dict = {
+            "term": self.node.data.current_term,
+            "candidateId": self.node.id,
+            "lastLogIndex": len(self.node.data.logs),
+            "lastLogTerm": self.node.data.logs[-1].term,
+        }
+        for peer_id, peer in self.node.get_peers():
+            res = peer.request_vote(request_vote_dict)
+            if self.node.data.current_term < res["term"]:
+                self.node.data.current_term = res["term"]
+                self.timer.stop()
+                Follower(self.node)
+                return
+            if res['voteGranted']:
+                self.voters.add(peer_id)
+                if len(self.voters) > self.vote_target:
+                    self.timer.stop()
+                    Leader(self.node)
+                    return
 
     def on_expire(self):
-        self.node.state = Candidate(self.node)
+        Candidate(self.node)
 
-    def on_append_entry(self, current_term, append_entry):
-        if current_term > append_entry["term"]:
-            return {"term": current_term, "success": False}
-        self.timer.cancel()
-        self.node.state = Follower(self.node)
-        return {"term": current_term, "success": True}
+    def on_append_entry(self, ae: dict):
+        if self.node.data.current_term > ae["term"]:
+            return False
+        self.timer.stop()
+        Follower(self.node)
+        return True
 
-    def on_request_vote(self, current_term, voted_for, request_vote):
-        if current_term < request_vote["term"]:
-            self.timer.cancel()
-            self.node.state = Follower(self.node)
-            return {"term": current_term, "voteGranted": True}
-        return {"term": current_term, "voteGranted": False}
+    def on_request_vote(self, rv: dict):
+        if self.node.data.current_term >= rv["term"]:
+            return False
+        self.node.data.current_term = rv["term"]
+        self.timer.stop()
+        Follower(self.node)
+        return True
 
 
 class Leader(State):
     def __init__(self, node) -> None:
-        self.node = node
-        self.interval = rc.HEARTBEAT_INTERVAL
-        self._set_timer()
-        self.next_idx = {id: len(self.node.db.get_logs()) for id, _ in self.node.get_peers()}
+        super().__init__(node, config.HEARTBEAT_INTERVAL)
+        self.next_idx = {id: len(self.node.data.logs) for id, _ in self.node.get_peers()}
         self.match_idx = {id: 0 for id, _ in self.node.get_peers()}
 
-    def append_entry_dict(self, peer_id, state, logs):
+    def append_entry_dict(self, peer_id):
         return {
-            "term": state[0],
-            "leader": rc.NODE_ID,
+            "term": self.node.data.current_term,
+            "leader": self.node.id,
             "previousLogIndex": self.next_idx[peer_id] - 1,
-            "previousLogTerm": logs[self.next_idx[peer_id] - 1][0],
-            "leaderCommit": self.commit_index
+            "previousLogTerm": self.node.data.logs[self.next_idx[peer_id] - 1].term,
+            "leaderCommit": self.node.commit_index
         }
 
     def on_expire(self):
-        state = self.node.db.get_state()
-        logs = self.node.db.get_logs()
-        for id, peer in self.node.get_peers():
-            response = peer.append_entry(self.append_entry_dict(id, state, logs))
-            while not response['success']:
-                if state[0] < response["term"]:
-                    self.timer.cancel()
-                    self.node.state = Follower(self.node)
+        for peer_id, peer in self.node.get_peers():
+            res = peer.append_entry(self.append_entry_dict(peer_id))
+            while not res['success']:
+                if self.node.data.current_term < res["term"]:
+                    self.timer.stop()
+                    Follower(self.node)
                     return
-                self.next_idx[id] -= 1
-                response = peer.append_entry(self.append_entry_dict(id, state, logs))
-        self._set_timer()
+                self.next_idx[peer_id] -= 1
+                res = peer.append_entry(self.append_entry_dict(peer_id))
+        self.timer.start()
 
-    def on_append_entry(self, current_term, append_entry):
-        if current_term < append_entry["term"]:
-            self.timer.cancel()
-            self.node.state = Follower(self.node)
-            return self.node.state.on_append_entry(current_term, append_entry)
-        return {"term": current_term, "success": False}
+    def on_append_entry(self, ae: dict):
+        if self.node.data.current_term >= ae["term"]:
+            return False
+        self.node.data.current_term = ae["term"]
+        self.timer.stop()
+        Follower(self.node)
+        return True
 
-    def on_request_vote(self, current_term, voted_for, request_vote):
-        return {"term": current_term, "voteGranted": False}
+    def on_request_vote(self, rv: dict):
+        if self.node.data.current_term >= rv["term"]:
+            return False
+        self.node.data.current_term = rv["term"]
+        self.timer.stop()
+        Follower(self.node)
+        return True
