@@ -1,5 +1,6 @@
 import threading
 import random
+import time
 import os
 
 import raft.config as config
@@ -7,22 +8,31 @@ import raft.config as config
 
 class FunctionTimer:
     def __init__(self, interval, func, start: bool = True) -> None:
-        self.interval = interval
-        self.func = func
+        self._interval = interval
+        self._active = False
+        self._func = func
 
         if start:
             self.start()
 
     def start(self):
-        self.timer = threading.Timer(random.randint(self.interval, 2 * self.interval) / 1000, self.func)
+        self._start_time = time.time()
+        self._active = True
+        self.timer = threading.Timer(random.randint(self._interval, 2 * self._interval) / 1000, self._func)
         self.timer.start()
 
     def stop(self):
+        self._active = False
         self.timer.cancel()
 
     def reset(self):
         self.stop()
         self.start()
+
+    def remaining(self):
+        if self._active:
+            return self._start_time + self._interval - time.time()
+        return -1
 
 
 class Log:
@@ -54,10 +64,10 @@ class LogList:
 
 class FileDatabase:
     def __init__(self) -> None:
-        self.dir = f"/app/data/node{config.NODE_ID}/"
-        self.current_term_file = f"{self.dir}/current_term.txt"
-        self.voted_for_file = f"{self.dir}/voted_for.txt"
-        self.logs_file = f"{self.dir}/logs.txt"
+        os.makedirs(os.path.dirname(config.NODE_DIR), exist_ok=True)
+        self.current_term_file = f"{config.NODE_DIR}current_term.txt"
+        self.voted_for_file = f"{config.NODE_DIR}voted_for.txt"
+        self.logs_file = f"{config.NODE_DIR}logs.txt"
         self._logs = LogList()
         self.reset()
         self.timer = FunctionTimer(config.DATABASE_WRITE, self._auto_save)
@@ -74,24 +84,23 @@ class FileDatabase:
         self.current_term = 0
         self.voted_for = -1
         self.logs[0] = Log(term=0, command="CREATE")
-        os.makedirs(os.path.dirname(self.dir), exist_ok=True)
         self.save()
 
     def save(self):
         with open(self.current_term_file, "w") as f:
             f.write(str(self.current_term))
-        with open(f"{self.dir}/voted_for.txt", "w") as f:
+        with open(self.voted_for_file, "w") as f:
             f.write(str(self.voted_for))
-        with open(f"{self.dir}/logs.txt", "w") as f:
+        with open(self.logs_file, "w") as f:
             f.write('\n'.join([f"{log.term} {log.command}" for log in self.logs]))
 
     def load(self):
         with open(self.current_term_file, "r") as f:
             self._current_term = int(f.read())
-        with open(f"{self.dir}/voted_for.txt", "r") as f:
+        with open(self.voted_for_file, "r") as f:
             self._voted_for = int(f.read())
         self._logs = LogList()
-        with open(f"{self.dir}/logs.txt", "r") as f:
+        with open(self.logs_file, "r") as f:
             for index, line in enumerate(f.read().splitlines()):
                 self._logs[index] = Log(
                     term=int(line.split()[0]),

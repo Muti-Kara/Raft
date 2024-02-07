@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+
 from raft.utils import FunctionTimer
 import raft.config as config
 
@@ -6,8 +8,14 @@ class State():
     def __init__(self, node, timeout) -> None:
         from raft.node import RaftNode
         self.node: RaftNode = node
-        self.node.state = self # Otherwise in Candidate __init__ node still is in Follower state
+        self.node.state = self # Otherwise in Candidate __init__, node still is in Follower state
         self.timer = FunctionTimer(timeout, self.on_expire)
+
+    def change_state(self, NewState: 'State', new_term: int | None = None):
+        if new_term:
+            self.node.data.current_term = new_term
+        self.timer.stop()
+        NewState(self.node)
 
     def on_expire(self):
         raise NotImplementedError
@@ -15,8 +23,14 @@ class State():
     def on_append_entry(self, ae: dict):
         raise NotImplementedError
 
+    def on_append_entry_callback(self, res: dict):
+        return
+
     def on_request_vote(self, rv: dict):
         raise NotImplementedError
+
+    def on_request_vote_callback(self, res: dict):
+        return
 
 
 class Follower(State):
@@ -24,7 +38,7 @@ class Follower(State):
         super().__init__(node, config.ELECTION_TIMEOUT)
 
     def on_expire(self):
-        Candidate(self.node)
+        self.change_state(Candidate)
 
     def on_append_entry(self, ae: dict):
         if self.node.data.current_term > ae["term"]:
@@ -47,11 +61,11 @@ class Follower(State):
 
         if self.node.data.current_term > rv["term"]:
             return False
-        if self.node.data.voted_for != -1:
-            return False
         if self.node.data.logs[-1].term > rv["lastLogTerm"]:
             return False
-        if len(self.node.data.logs) > rv["lastLogIndex"]:
+        if len(self.node.data.logs) - 1 > rv["lastLogIndex"]:
+            return False
+        if self.node.data.voted_for != -1:
             return False
 
         self.node.data.voted_for = rv['candidateId']
@@ -71,40 +85,39 @@ class Candidate(State):
         request_vote_dict = {
             "term": self.node.data.current_term,
             "candidateId": self.node.id,
-            "lastLogIndex": len(self.node.data.logs),
+            "lastLogIndex": len(self.node.data.logs) - 1,
             "lastLogTerm": self.node.data.logs[-1].term,
         }
-        for peer_id, peer in self.node.get_peers():
-            res = peer.request_vote(request_vote_dict)
-            if self.node.data.current_term < res["term"]:
-                self.node.data.current_term = res["term"]
-                self.timer.stop()
-                Follower(self.node)
-                return
-            if res['voteGranted']:
-                self.voters.add(peer_id)
-                if len(self.voters) > self.vote_target:
-                    self.timer.stop()
-                    Leader(self.node)
-                    return
+        with ThreadPoolExecutor() as executor:
+            for _, peer in self.node.get_peers():
+                executor.submit(
+                    peer.request_vote,
+                    request_vote_dict,
+                    self.node.request_vote_callback
+                )
 
     def on_expire(self):
-        Candidate(self.node)
+        self.change_state(Candidate)
 
     def on_append_entry(self, ae: dict):
         if self.node.data.current_term > ae["term"]:
             return False
-        self.timer.stop()
-        Follower(self.node)
-        return True
+        self.change_state(Follower)
+        return self.node.state.on_append_entry(ae)
 
     def on_request_vote(self, rv: dict):
         if self.node.data.current_term >= rv["term"]:
             return False
-        self.node.data.current_term = rv["term"]
-        self.timer.stop()
-        Follower(self.node)
+        self.change_state(Follower, rv["term"])
         return True
+
+    def on_request_vote_callback(self, res):
+        if self.node.data.current_term < res["term"]:
+            self.change_state(Follower, res["term"])
+        elif res['voteGranted']:
+            self.voters.add(res['id'])
+            if len(self.voters) >= self.vote_target:
+                self.change_state(Leader)
 
 
 class Leader(State):
@@ -112,6 +125,7 @@ class Leader(State):
         super().__init__(node, config.HEARTBEAT_INTERVAL)
         self.next_idx = {id: len(self.node.data.logs) for id, _ in self.node.get_peers()}
         self.match_idx = {id: 0 for id, _ in self.node.get_peers()}
+        self.responses = dict()
 
     def append_entry_dict(self, peer_id):
         return {
@@ -123,29 +137,30 @@ class Leader(State):
         }
 
     def on_expire(self):
-        for peer_id, peer in self.node.get_peers():
-            res = peer.append_entry(self.append_entry_dict(peer_id))
-            while not res['success']:
-                if self.node.data.current_term < res["term"]:
-                    self.timer.stop()
-                    Follower(self.node)
-                    return
-                self.next_idx[peer_id] -= 1
-                res = peer.append_entry(self.append_entry_dict(peer_id))
-        self.timer.start()
+        with ThreadPoolExecutor() as executor:
+            for peer_id, peer in self.node.get_peers():
+                executor.submit(
+                    peer.append_entry,
+                    self.append_entry_dict(peer_id),
+                    self.node.append_entry_callback
+                )
+        self.timer.reset()
 
     def on_append_entry(self, ae: dict):
         if self.node.data.current_term >= ae["term"]:
             return False
-        self.node.data.current_term = ae["term"]
-        self.timer.stop()
-        Follower(self.node)
+        self.change_state(Follower, ae["term"])
         return True
+
+    def on_append_entry_callback(self, res):
+        if not res["success"]:    
+            if self.node.data.current_term < res["term"]:
+                return self.change_state(Follower, res["term"])
+            else:
+                self.next_idx[res['id']] -= 1
 
     def on_request_vote(self, rv: dict):
         if self.node.data.current_term >= rv["term"]:
             return False
-        self.node.data.current_term = rv["term"]
-        self.timer.stop()
-        Follower(self.node)
+        self.change_state(Follower, rv["term"])
         return True
