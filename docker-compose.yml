@@ -40,3 +40,29 @@ services:
       - PEER_PORT=15003
     volumes:
       - .:/app
+  peer4:
+    container_name: peer4
+    build: .
+    command: python /app/main.py
+    restart: on-failure
+    ports:
+      - 15004:15004
+    environment:
+      - PEER_ID=4
+      - PEER_HOST=peer4
+      - PEER_PORT=15004
+    volumes:
+      - .:/app
+  peer5:
+    container_name: peer5
+    build: .
+    command: python /app/main.py
+    restart: on-failure
+    ports:
+      - 15005:15005
+    environment:
+      - PEER_ID=5
+      - PEER_HOST=peer5
+      - PEER_PORT=15005
+    volumes:
+      - .:/app

@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+import rpyc
 
 from raft.utils import FunctionTimer, Log
 import raft.config as config
@@ -45,6 +46,7 @@ class Follower(State):
         return len(self.node.data.logs) - 1 # the last index
 
     def on_expire(self):
+        print(f"Waited for {self.timer._random_interval / 1000} sec", flush=True)
         self.change_state(Candidate)
 
     def on_append_entry(self, ae: dict):
@@ -92,12 +94,17 @@ class Candidate(State):
             "lastLogTerm": self.node.data.logs[-1].term,
         }
         with ThreadPoolExecutor() as executor:
-            for _, peer in self.node.get_peer_connections():
-                executor.submit(
-                    peer.request_vote,
-                    request_vote_dict,
-                    self.node.request_vote_callback
-                )
+            for peer_addr in self.node.peers.values():
+                executor.submit(self.call_rv_rpc, peer_addr, request_vote_dict)
+
+    def call_rv_rpc(self, peer_addr, request_vote_dict):
+        try:
+            rpyc.connect(*peer_addr).root.request_vote(
+                request_vote_dict,
+                self.node.request_vote_callback
+            )
+        except:
+            return
 
     def on_expire(self):
         self.change_state(Candidate)
@@ -128,6 +135,7 @@ class Leader(State):
         super().__init__(node, config.HEARTBEAT_INTERVAL)
         self.next_idx = {id: len(self.node.data.logs) for id, _ in self.node.peers.items()}
         self.match_idx = {id: 0 for id, _ in self.node.peers.items()}
+        self.node.data.logs[len(self.node.data.logs)] = Log(term=self.node.data.current_term, command=f"OBEY_NODE_{self.node.id}")
 
     def append_entry_dict(self, peer_id):
         return {
@@ -140,20 +148,28 @@ class Leader(State):
         }
 
     def on_expire(self):
-        self.node.data.logs[len(self.node.data.logs)] = Log(term=self.node.data.current_term, command=f"OBEY NODE {self.node.id}")
         sorted_match_index = sorted(self.match_idx.values())
         self.node.commit_index = max(
             self.node.commit_index,
             sorted_match_index[len(sorted_match_index)//2] # median of current acknowledged matches
         )
-        with ThreadPoolExecutor() as executor:
-            for peer_id, peer in self.node.get_peer_connections():
-                executor.submit(
-                    peer.append_entry,
-                    self.append_entry_dict(peer_id),
-                    self.node.append_entry_callback
-                )
         self.timer.reset()
+        with ThreadPoolExecutor() as executor:
+            for peer_id, peer_addr in self.node.peers.items():
+                executor.submit(
+                    self.call_ae_rpc,
+                    peer_id,
+                    peer_addr
+                )
+
+    def call_ae_rpc(self, peer_id, peer_addr):
+        try:
+            rpyc.connect(*peer_addr).root.append_entry(
+                self.append_entry_dict(peer_id),
+                self.node.request_vote_callback
+            )
+        except:
+            return
 
     def on_append_entry(self, ae: dict):
         if self.node.data.current_term >= ae["term"]:
