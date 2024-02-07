@@ -1,6 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 
-from raft.utils import FunctionTimer
+from raft.utils import FunctionTimer, Log
 import raft.config as config
 
 
@@ -37,22 +37,25 @@ class Follower(State):
     def __init__(self, node) -> None:
         super().__init__(node, config.ELECTION_TIMEOUT)
 
+    def accept_logs(self, entries, previous_log_index, leader_commit):
+        index = previous_log_index + 1
+        for entry in entries:
+            self.node.data.logs[index] = Log(term=entry[0], command=entry[1])
+        self.node.commit_index = leader_commit
+        return len(self.node.data.logs) - 1 # the last index
+
     def on_expire(self):
         self.change_state(Candidate)
 
     def on_append_entry(self, ae: dict):
         if self.node.data.current_term > ae["term"]:
-            return False
-
+            return 0
+        if self.node.data.logs[ae['previousLogIndex']].term != ae['previousLogTerm']:
+            return 0
         if self.node.data.current_term < ae["term"]:
             self.node.data.current_term = ae["term"]
-            return True
-
-        if self.node.data.logs[ae['previousLogIndex']].term != ae['previousLogTerm']:
-            return False
-
         self.timer.reset()
-        return True
+        return self.accept_logs(ae["entries"], ae["previousLogIndex"], ae["leaderCommit"])
 
     def on_request_vote(self, rv: dict):
         if self.node.data.current_term < rv["term"]:
@@ -89,7 +92,7 @@ class Candidate(State):
             "lastLogTerm": self.node.data.logs[-1].term,
         }
         with ThreadPoolExecutor() as executor:
-            for _, peer in self.node.get_peers():
+            for _, peer in self.node.get_peer_connections():
                 executor.submit(
                     peer.request_vote,
                     request_vote_dict,
@@ -123,9 +126,8 @@ class Candidate(State):
 class Leader(State):
     def __init__(self, node) -> None:
         super().__init__(node, config.HEARTBEAT_INTERVAL)
-        self.next_idx = {id: len(self.node.data.logs) for id, _ in self.node.get_peers()}
-        self.match_idx = {id: 0 for id, _ in self.node.get_peers()}
-        self.responses = dict()
+        self.next_idx = {id: len(self.node.data.logs) for id, _ in self.node.peers.items()}
+        self.match_idx = {id: 0 for id, _ in self.node.peers.items()}
 
     def append_entry_dict(self, peer_id):
         return {
@@ -133,12 +135,19 @@ class Leader(State):
             "leader": self.node.id,
             "previousLogIndex": self.next_idx[peer_id] - 1,
             "previousLogTerm": self.node.data.logs[self.next_idx[peer_id] - 1].term,
-            "leaderCommit": self.node.commit_index
+            "leaderCommit": self.node.commit_index,
+            "entries": self.node.data.logs.serialize(self.next_idx[peer_id])
         }
 
     def on_expire(self):
+        self.node.data.logs[len(self.node.data.logs)] = Log(term=self.node.data.current_term, command=f"OBEY NODE {self.node.id}")
+        sorted_match_index = sorted(self.match_idx.values())
+        self.node.commit_index = max(
+            self.node.commit_index,
+            sorted_match_index[len(sorted_match_index)//2] # median of current acknowledged matches
+        )
         with ThreadPoolExecutor() as executor:
-            for peer_id, peer in self.node.get_peers():
+            for peer_id, peer in self.node.get_peer_connections():
                 executor.submit(
                     peer.append_entry,
                     self.append_entry_dict(peer_id),
@@ -153,11 +162,15 @@ class Leader(State):
         return True
 
     def on_append_entry_callback(self, res):
-        if not res["success"]:    
+        if res["success"]:
+            self.next_idx[res["id"]] = res["success"] + 1
+            self.match_idx[res["id"]] = res["success"]
+        else:
             if self.node.data.current_term < res["term"]:
                 return self.change_state(Follower, res["term"])
             else:
-                self.next_idx[res['id']] -= 1
+                self.next_idx[res['id']] = 0
+                self.match_idx[res['id']] = 0
 
     def on_request_vote(self, rv: dict):
         if self.node.data.current_term >= rv["term"]:

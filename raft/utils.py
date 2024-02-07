@@ -16,10 +16,11 @@ class FunctionTimer:
             self.start()
 
     def start(self):
+        self._random_interval = random.randint(self._interval, 2 * self._interval)
+        self.timer = threading.Timer(self._random_interval / 1000, self._func)
+        self.timer.start()
         self._start_time = time.time()
         self._active = True
-        self.timer = threading.Timer(random.randint(self._interval, 2 * self._interval) / 1000, self._func)
-        self.timer.start()
 
     def stop(self):
         self._active = False
@@ -31,7 +32,7 @@ class FunctionTimer:
 
     def remaining(self):
         if self._active:
-            return self._start_time + self._interval - time.time()
+            return self._start_time + self._random_interval - time.time()
         return -1
 
 
@@ -60,6 +61,9 @@ class LogList:
 
     def __len__(self):
         return len(self._logs)
+
+    def serialize(self, index):
+        return [(log.term, log.command) for log in self._logs[index:]]
 
 
 class FileDatabase:

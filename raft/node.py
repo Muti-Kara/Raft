@@ -1,4 +1,5 @@
 from rpyc.utils.server import ThreadedServer
+import logging
 import rpyc
 import time
 
@@ -6,8 +7,8 @@ from raft.utils import FileDatabase
 from raft.states import Follower
 import raft.config as config
 
-network_delay = 0.6
-
+network_delay = 0
+# logging.basicConfig(level=logging.INFO)
 
 @rpyc.service
 class RaftNode(rpyc.Service):
@@ -22,7 +23,7 @@ class RaftNode(rpyc.Service):
     @rpyc.exposed
     def append_entry(self, append_entry: dict, append_entry_callback):
         time.sleep(network_delay)
-        print(f"STATE: {self.state.__class__.__name__}  \tAE from: {append_entry['leader'], append_entry['term']}", flush=True)
+        print(f"STATE: {self.state.__class__.__name__}  \tAE: {append_entry}", flush=True)
         append_entry_callback({
             "id": self.id,
             "term": self.data.current_term,
@@ -31,13 +32,13 @@ class RaftNode(rpyc.Service):
 
     def append_entry_callback(self, response: dict):
         time.sleep(network_delay)
-        print(f"STATE: {self.state.__class__.__name__}  \tAE to:   {response['id'], response['success']}", flush=True)
+        print(f"STATE: {self.state.__class__.__name__}  \tAE to:   {response}", flush=True)
         self.state.on_append_entry_callback(response)
         
     @rpyc.exposed
     def request_vote(self, request_vote: dict, request_vote_callback):
         time.sleep(network_delay)
-        print(f"STATE: {self.state.__class__.__name__}  \tRV from: {request_vote['candidateId'], request_vote['term']}", flush=True)
+        print(f"STATE: {self.state.__class__.__name__}  \tRV from: {request_vote}", flush=True)
         request_vote_callback({
             "id": self.id,
             "term": self.data.current_term,
@@ -46,10 +47,10 @@ class RaftNode(rpyc.Service):
 
     def request_vote_callback(self, response: dict):
         time.sleep(network_delay)
-        print(f"STATE: {self.state.__class__.__name__}  \tRV to:   {response['id'], response['voteGranted']}", flush=True)
+        print(f"STATE: {self.state.__class__.__name__}  \tRV to:   {response}", flush=True)
         self.state.on_request_vote_callback(response)
 
-    def get_peers(self):
+    def get_peer_connections(self):
         for id, address in self.peers.items():
             try:
                 yield id, rpyc.connect(*address).root
