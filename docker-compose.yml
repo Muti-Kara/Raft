@@ -8,9 +8,11 @@ services:
     restart: on-failure
     ports:
       - 15001:15001
+      - 5001:5001
     environment:
       - PEER_ID=1
-      - PEER_PORT=15001
+      - PEER_RPC_PORT=15001
+      - PEER_HTTP_PORT=5001
     volumes:
       - .:/app
   peer2:
@@ -20,9 +22,11 @@ services:
     restart: on-failure
     ports:
       - 15002:15002
+      - 5002:5002
     environment:
       - PEER_ID=2
-      - PEER_PORT=15002
+      - PEER_RPC_PORT=15002
+      - PEER_HTTP_PORT=5002
     volumes:
       - .:/app
   peer3:
@@ -32,9 +36,11 @@ services:
     restart: on-failure
     ports:
       - 15003:15003
+      - 5003:5003
     environment:
       - PEER_ID=3
-      - PEER_PORT=15003
+      - PEER_RPC_PORT=15003
+      - PEER_HTTP_PORT=5003
     volumes:
       - .:/app
   peer4:
@@ -44,9 +50,11 @@ services:
     restart: on-failure
     ports:
       - 15004:15004
+      - 5004:5004
     environment:
       - PEER_ID=4
-      - PEER_PORT=15004
+      - PEER_RPC_PORT=15004
+      - PEER_HTTP_PORT=5004
     volumes:
       - .:/app
   peer5:
@@ -56,8 +64,10 @@ services:
     restart: on-failure
     ports:
       - 15005:15005
+      - 5005:5005
     environment:
       - PEER_ID=5
-      - PEER_PORT=15005
+      - PEER_RPC_PORT=15005
+      - PEER_HTTP_PORT=5005
     volumes:
       - .:/app

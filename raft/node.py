@@ -1,55 +1,68 @@
-from rpyc.utils.server import ThreadedServer
 import rpyc
 import time
 
-from raft.utils import FileDatabase
+from raft.utils import FileDatabase, StateMachine, Log
 from raft.states import Follower
 import raft.config as config
 
-network_delay = 0
 
 @rpyc.service
 class RaftNode(rpyc.Service):
-    def __init__(self) -> None:
-        super().__init__()
-        self.id = config.NODE_ID
-        self.peers = {node_id: peer for node_id, peer in config.PEERS.items() if node_id != self.id}
-        self.data = FileDatabase()
-        self.commit_index = 0
-        self.last_applied = 0 # This is for applying commits to state machine
-
     @rpyc.exposed
     def append_entry(self, append_entry: dict, append_entry_callback):
-        print(f"STATE: {self.state.__class__.__name__}  \tAE: {append_entry}", flush=True)
-        success = self.state.on_append_entry(append_entry)
-        time.sleep(network_delay)
         append_entry_callback({
             "id": self.id,
             "term": self.data.current_term,
-            "success": success
+            "success": self.state.on_append_entry(append_entry)
         })
 
     def append_entry_callback(self, response: dict):
-        time.sleep(network_delay)
-        print(f"STATE: {self.state.__class__.__name__}  \tAE to:   {response}", flush=True)
         self.state.on_append_entry_callback(response)
         
     @rpyc.exposed
     def request_vote(self, request_vote: dict, request_vote_callback):
-        print(f"STATE: {self.state.__class__.__name__}  \tRV from: {request_vote}", flush=True)
-        vote_granted = self.state.on_request_vote(request_vote)
-        time.sleep(network_delay)
-        request_vote_callback({
-            "id": self.id,
-            "term": self.data.current_term,
-            "voteGranted": vote_granted
-        })
+        if time.time() > self.current_leader["heartbeat"]:
+            request_vote_callback({
+                "id": self.id,
+                "term": self.data.current_term,
+                "voteGranted": self.state.on_request_vote(request_vote)
+            })
 
     def request_vote_callback(self, response: dict):
-        time.sleep(network_delay)
-        print(f"STATE: {self.state.__class__.__name__}  \tRV to:   {response}", flush=True)
         self.state.on_request_vote_callback(response)
 
+    def set_leader(self, leader_id):
+        self.current_leader["id"] = leader_id
+        self.current_leader["heartbeat"] = time.time() + (config.MIN_ELECTION_TIMEOUT / 1000)
+
+    def apply_commands(self):
+        if self.last_applied < self.commit_index:
+            for i in range(self.last_applied+1, self.commit_index+1):
+                args = self.data.logs[i].command.split(sep=Log.sep)
+                self.state_machine.post_request(key=args[0], value=args[1])
+            self.last_applied = self.commit_index
+
+    def post_request(self, key: str, value: str):
+        if self.current_leader["id"] == self.id:
+            self.data.logs[len(self.data.logs)] = Log(
+                term=self.data.current_term,
+                command=f"{key}{Log.sep}{value}"
+            )
+            return str(self.data.logs[len(self.data.logs) - 1]), True
+        return self.peers_http[self.current_leader["id"]], False
+
+    def get_request(self, key: str):
+        if self.current_leader["id"] == self.id:
+            return self.state_machine.get_request(key=key), True
+        return self.peers_http[self.current_leader["id"]], False
+
     def run(self):
+        self.id = config.NODE_ID
+        self.peers = {node_id: peer[:-1] for node_id, peer in config.PEERS.items() if node_id != self.id}
+        self.peers_http = {node_id: peer[::2] for node_id, peer in config.PEERS.items() if node_id != self.id}
+        self.commit_index = 0
+        self.last_applied = 0
+        self.current_leader = {"id": None, "heartbeat": 0}
+        self.state_machine = StateMachine()
+        self.data = FileDatabase()
         self.state = Follower(self)
-        ThreadedServer(self, port=config.NODE_PORT).start()

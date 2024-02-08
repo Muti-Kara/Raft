@@ -6,11 +6,11 @@ import raft.config as config
 
 
 class State():
-    def __init__(self, node, timeout) -> None:
-        from raft.node import RaftNode
-        self.node: RaftNode = node
+    def __init__(self, node, min_timeout, max_timeout) -> None:
+        print(self.__class__.__name__, flush=True)
+        self.node = node
         self.node.state = self
-        self.timer = FunctionTimer(timeout, self.on_expire)
+        self.timer = FunctionTimer(min_timeout, max_timeout, self.on_expire)
 
     def change_state(self, NewState: 'State', new_term: int | None = None):
         if isinstance(self.node.state, NewState):
@@ -41,7 +41,7 @@ class State():
 
 class Follower(State):
     def __init__(self, node) -> None:
-        super().__init__(node, config.ELECTION_TIMEOUT)
+        super().__init__(node, config.MIN_ELECTION_TIMEOUT, config.MAX_ELECTION_TIMEOUT)
 
     def on_expire(self):
         self.change_state(Candidate)
@@ -49,9 +49,13 @@ class Follower(State):
     def on_append_entry(self, ae: dict):
         if self.node.data.current_term > ae["term"]:
             return -2
+
         self.timer.reset()
+        self.node.set_leader(ae['leader'])
+
         if self.node.data.current_term < ae["term"]:
             self.node.data.current_term = ae["term"]
+
         if ae['previousLogIndex'] >= len(self.node.data.logs):
             return -2
         if self.node.data.logs[ae['previousLogIndex']].term != ae['previousLogTerm']:
@@ -82,12 +86,13 @@ class Follower(State):
             self.node.data.logs[index] = Log(term=entry[0], command=entry[1])
             index += 1
         self.node.commit_index = ae["leaderCommit"]
+        self.node.apply_commands()
         return len(self.node.data.logs) - 1
 
 
 class Candidate(State):
     def __init__(self, node) -> None:
-        super().__init__(node, config.ELECTION_TIMEOUT)
+        super().__init__(node, config.MIN_ELECTION_TIMEOUT, config.MAX_ELECTION_TIMEOUT)
 
         self.node.data.current_term += 1
         self.node.data.voted_for = self.node.id
@@ -138,11 +143,10 @@ class Candidate(State):
 
 class Leader(State):
     def __init__(self, node) -> None:
-        super().__init__(node, config.HEARTBEAT_INTERVAL)
+        super().__init__(node, config.HEARTBEAT_INTERVAL, config.HEARTBEAT_INTERVAL)
         self.next_idx = {id: len(self.node.data.logs) for id, _ in self.node.peers.items()}
         self.match_idx = {id: 0 for id, _ in self.node.peers.items()}
-
-        self.node.data.logs[len(self.node.data.logs)] = Log(term=self.node.data.current_term, command=f"OBEY_NODE_{self.node.id}")
+        self.node.current_leader["id"] = self.node.id
 
     def on_expire(self):
         self.timer.reset()
@@ -165,6 +169,7 @@ class Leader(State):
                 self.node.commit_index,
                 sorted_match_index[len(sorted_match_index)//2]
             )
+            self.node.apply_commands()
         else:
             if self.node.data.current_term < res["term"]:
                 return self.change_state(Follower, res["term"])

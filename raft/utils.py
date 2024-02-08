@@ -7,8 +7,9 @@ import raft.config as config
 
 
 class FunctionTimer:
-    def __init__(self, interval, func, start: bool = True) -> None:
-        self._interval = interval
+    def __init__(self, min_interval, max_interval, func, start: bool = True) -> None:
+        self._min_interval = min_interval
+        self._max_interval = max_interval
         self._active = False
         self._func = func
 
@@ -16,15 +17,15 @@ class FunctionTimer:
             self.start()
 
     def start(self):
-        self._random_interval = random.randint(self._interval, 2 * self._interval)
-        self.timer = threading.Timer(self._random_interval / 1000, self._func)
-        self.timer.start()
+        self._random_interval = random.uniform(self._min_interval, self._max_interval)
+        self._timer = threading.Timer(self._random_interval, self._func)
+        self._timer.start()
         self._start_time = time.time()
         self._active = True
 
     def stop(self):
         self._active = False
-        self.timer.cancel()
+        self._timer.cancel()
 
     def reset(self):
         self.stop()
@@ -37,12 +38,17 @@ class FunctionTimer:
 
 
 class Log:
+    sep = ':'
+
     def __init__(self, term, command) -> None:
         self.term: int = term
         self.command: str = command
 
     def __call__(self):
         print(f"Executing: {self.command}", flush=True)
+
+    def __str__(self) -> str:
+        return f"{self.term}{self.sep}{self.command}"
 
 
 class LogList:
@@ -74,7 +80,7 @@ class FileDatabase:
         self.logs_file = f"{config.NODE_DIR}logs.txt"
         self._logs = LogList()
         self.reset()
-        self.timer = FunctionTimer(config.DATABASE_WRITE, self._auto_save)
+        self.timer = FunctionTimer(config.DATABASE_WRITE, config.DATABASE_WRITE, self._auto_save)
         self.timer.start()
 
     def __del__(self) -> None:
@@ -96,7 +102,7 @@ class FileDatabase:
         with open(self.voted_for_file, "w") as f:
             f.write(str(self.voted_for))
         with open(self.logs_file, "w") as f:
-            f.write('\n'.join([f"{log.term} {log.command}" for log in self.logs]))
+            f.write('\n'.join(map(str, self.logs)))
 
     def load(self):
         with open(self.current_term_file, "r") as f:
@@ -107,8 +113,8 @@ class FileDatabase:
         with open(self.logs_file, "r") as f:
             for index, line in enumerate(f.read().splitlines()):
                 self._logs[index] = Log(
-                    term=int(line.split()[0]),
-                    command=line.split()[1]
+                    term=int(line.split(sep=Log.sep)[0]),
+                    command=line.split(sep=Log.sep)[1]
                 )
 
     @property
@@ -130,3 +136,17 @@ class FileDatabase:
     @property
     def logs(self) -> LogList: # array of Log(term, command)
         return self._logs
+
+
+class StateMachine:
+    def __init__(self) -> None:
+        self.store = {}
+
+    def post_request(self, key, value):
+        self.store[key] = value
+        return (key, value), True
+
+    def get_request(self, key):
+        if self.store.get(key, None):
+            return self.store[key], True
+        return None, False
