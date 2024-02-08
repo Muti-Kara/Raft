@@ -6,7 +6,7 @@ from raft.utils import FileDatabase
 from raft.states import Follower
 import raft.config as config
 
-network_delay = 0.3
+network_delay = 0.4
 
 @rpyc.service
 class RaftNode(rpyc.Service):

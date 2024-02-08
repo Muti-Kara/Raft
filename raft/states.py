@@ -48,12 +48,14 @@ class Follower(State):
 
     def on_append_entry(self, ae: dict):
         if self.node.data.current_term > ae["term"]:
-            return 0
-        if self.node.data.logs[ae['previousLogIndex']].term != ae['previousLogTerm']:
-            return 0
+            return -2
+        self.timer.reset()
         if self.node.data.current_term < ae["term"]:
             self.node.data.current_term = ae["term"]
-        self.timer.reset()
+        if ae['previousLogIndex'] >= len(self.node.data.logs):
+            return -2
+        if self.node.data.logs[ae['previousLogIndex']].term != ae['previousLogTerm']:
+            return -2
         return self.accept_logs(ae)
 
     def on_request_vote(self, rv: dict):
@@ -139,7 +141,7 @@ class Leader(State):
         super().__init__(node, config.HEARTBEAT_INTERVAL)
         self.next_idx = {id: len(self.node.data.logs) for id, _ in self.node.peers.items()}
         self.match_idx = {id: 0 for id, _ in self.node.peers.items()}
-        
+
         self.node.data.logs[len(self.node.data.logs)] = Log(term=self.node.data.current_term, command=f"OBEY_NODE_{self.node.id}")
 
     def on_expire(self):
@@ -155,7 +157,7 @@ class Leader(State):
         return True
 
     def on_append_entry_callback(self, res):
-        if res["success"] != 0:
+        if res["success"] != -2:
             self.next_idx[res["id"]] = res["success"] + 1
             self.match_idx[res["id"]] = max(res["success"], self.match_idx[res["id"]])
             sorted_match_index = sorted(self.match_idx.values())
@@ -167,8 +169,8 @@ class Leader(State):
             if self.node.data.current_term < res["term"]:
                 return self.change_state(Follower, res["term"])
             else:
-                self.next_idx[res['id']] = 0
-                self.match_idx[res['id']] = 0
+                self.next_idx[res['id']] = 1 # I know that create block will exist
+                self.match_idx[res['id']] = 1
 
     def on_request_vote(self, rv: dict):
         if self.node.data.current_term >= rv["term"]:
