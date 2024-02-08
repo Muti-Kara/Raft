@@ -1,5 +1,4 @@
 from rpyc.utils.server import ThreadedServer
-import logging
 import rpyc
 import time
 
@@ -7,8 +6,7 @@ from raft.utils import FileDatabase
 from raft.states import Follower
 import raft.config as config
 
-network_delay = 0
-# logging.basicConfig(level=logging.INFO)
+network_delay = 0.3
 
 @rpyc.service
 class RaftNode(rpyc.Service):
@@ -22,12 +20,13 @@ class RaftNode(rpyc.Service):
 
     @rpyc.exposed
     def append_entry(self, append_entry: dict, append_entry_callback):
-        time.sleep(network_delay)
         print(f"STATE: {self.state.__class__.__name__}  \tAE: {append_entry}", flush=True)
+        success = self.state.on_append_entry(append_entry)
+        time.sleep(network_delay)
         append_entry_callback({
             "id": self.id,
             "term": self.data.current_term,
-            "success": self.state.on_append_entry(append_entry)
+            "success": success
         })
 
     def append_entry_callback(self, response: dict):
@@ -37,25 +36,19 @@ class RaftNode(rpyc.Service):
         
     @rpyc.exposed
     def request_vote(self, request_vote: dict, request_vote_callback):
-        time.sleep(network_delay)
         print(f"STATE: {self.state.__class__.__name__}  \tRV from: {request_vote}", flush=True)
+        vote_granted = self.state.on_request_vote(request_vote)
+        time.sleep(network_delay)
         request_vote_callback({
             "id": self.id,
             "term": self.data.current_term,
-            "voteGranted": self.state.on_request_vote(request_vote)
+            "voteGranted": vote_granted
         })
 
     def request_vote_callback(self, response: dict):
         time.sleep(network_delay)
         print(f"STATE: {self.state.__class__.__name__}  \tRV to:   {response}", flush=True)
         self.state.on_request_vote_callback(response)
-
-    def get_peer_connections(self):
-        for id, address in self.peers.items():
-            try:
-                yield id, rpyc.connect(*address).root
-            except Exception:
-                continue
 
     def run(self):
         self.state = Follower(self)

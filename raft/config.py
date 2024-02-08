@@ -1,7 +1,7 @@
 import os
 
-NODE_ID = int(os.getenv('PEER_ID'))
-NODE_PORT = int(os.getenv('PEER_PORT'))
+NODE_ID = int(os.getenv('PEER_ID', -1))
+NODE_PORT = int(os.getenv('PEER_PORT', -1))
 NODE_DIR = f"/app/data/node{NODE_ID}/"
 
 ELECTION_TIMEOUT = 1000

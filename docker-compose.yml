@@ -10,7 +10,6 @@ services:
       - 15001:15001
     environment:
       - PEER_ID=1
-      - PEER_HOST=peer1
       - PEER_PORT=15001
     volumes:
       - .:/app
@@ -23,7 +22,6 @@ services:
       - 15002:15002
     environment:
       - PEER_ID=2
-      - PEER_HOST=peer2
       - PEER_PORT=15002
     volumes:
       - .:/app
@@ -36,7 +34,6 @@ services:
       - 15003:15003
     environment:
       - PEER_ID=3
-      - PEER_HOST=peer3
       - PEER_PORT=15003
     volumes:
       - .:/app
@@ -49,7 +46,6 @@ services:
       - 15004:15004
     environment:
       - PEER_ID=4
-      - PEER_HOST=peer4
       - PEER_PORT=15004
     volumes:
       - .:/app
@@ -62,7 +58,6 @@ services:
       - 15005:15005
     environment:
       - PEER_ID=5
-      - PEER_HOST=peer5
       - PEER_PORT=15005
     volumes:
       - .:/app
