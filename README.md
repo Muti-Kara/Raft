@@ -5,9 +5,9 @@ This repository contains an implementation of the Raft consensus algorithm, desi
 - [x] Having a preconfigured peer cluster
     - [x] Append Entry and Request Vote RPC's
     - [x] Tested against network delays
-- [ ] An external API for recording logs
+- [x] An external API for recording logs
 - [ ] Adding or removing members from the cluster
-- [ ] Making this suitable for integrating into other projects
+- [ ] Making this suitable for integrating into other projects (Partially done!)
 
 ## Table of Contents
 
