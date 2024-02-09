@@ -3,7 +3,7 @@ import os
 NODE_ID = int(os.getenv('PEER_ID', -1))
 NODE_RPC_PORT = int(os.getenv('PEER_RPC_PORT', -1))
 NODE_HTTP_PORT = int(os.getenv('PEER_HTTP_PORT', -1))
-NODE_DIR = f"/app/data/node{NODE_ID}/"
+NODE_FILE = f"/app/data/node{NODE_ID}.pkl"
 
 MIN_ELECTION_TIMEOUT = 1
 MAX_ELECTION_TIMEOUT = 2

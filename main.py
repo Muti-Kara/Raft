@@ -1,20 +1,21 @@
 from concurrent.futures import ThreadPoolExecutor
-from fastapi.responses import RedirectResponse
 from rpyc.utils.server import ThreadedServer
 from pydantic import BaseModel
 from fastapi import FastAPI
-
-from raft.node import RaftNode
-import raft.config as config
 import uvicorn
 
+from raft.utils.machine import KeyStoreMachine
+from raft.utils.database import FileDatabase
+from raft.node import RaftNode
+import config
 
-class KeyValue(BaseModel):
+
+class Command(BaseModel):
     key: str
     value: str
 
 
-node = RaftNode()
+node = RaftNode(Machine=KeyStoreMachine, Database=FileDatabase)
 rpc = ThreadedServer(node, port=config.NODE_RPC_PORT)
 app = FastAPI()
 
@@ -27,23 +28,22 @@ def get_information():
         "voted for": node.data.voted_for,
         "commit index": node.commit_index,
         "last applied": node.last_applied,
-        "logs": node.data.logs.serialize(0)
+        "logs": node.data.logs.model_dump()
     }
 
 @app.get('/storage')
 def get_value(key: str):
-    res, is_leader = node.get_request(key=key)
+    res, is_leader = node.get_request(command={"key": key})
     if is_leader:
         return res
     return {"leader_url": f"http://{res[0]}:{res[1]}/storage?key={key}"}
 
 @app.post('/storage')
-def get_value(body: KeyValue):
-    res, is_leader = node.post_request(key=body.key, value=body.value)
+def get_value(command: Command):
+    res, is_leader = node.post_request(command.model_dump())
     if is_leader:
         return res
-    return {"leader_url": f"http://{res[0]}:{res[1]}/storage", "request_body": body}
-
+    return {"leader_url": f"http://{res[0]}:{res[1]}/storage", "request_body": command}
 
 if __name__ == "__main__":
     with ThreadPoolExecutor() as executor:
