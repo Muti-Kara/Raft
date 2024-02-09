@@ -9,6 +9,8 @@ This repository contains an implementation of the Raft consensus algorithm, desi
 - [ ] Adding or removing members from the cluster
 - [ ] Making this suitable for integrating into other projects (Partially done!)
 
+Currenttly nodes cluster is creating a simple distributed key-value store. If you'd like to use this for other purposes, override the BaseMachine class from raft.utils.machine.
+
 ## Table of Contents
 
 - [Background](#background)
