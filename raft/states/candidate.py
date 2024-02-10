@@ -1,10 +1,8 @@
-from concurrent.futures import ThreadPoolExecutor
 import pickle
 import rpyc
 
-from .rpc_models import AppendEntry, RequestVote, RequestVoteResponse
+from raft.utils.models import AppendEntry, RequestVote, RequestVoteResponse
 from .state import State
-import config
 
 
 class Candidate(State):
@@ -19,19 +17,15 @@ class Candidate(State):
         Args:
             node: The Raft node associated with this state.
         """
-        super().__init__(node, config.MIN_ELECTION_TIMEOUT, config.MAX_ELECTION_TIMEOUT)
+        super().__init__(node, node.cluster.min_election_timeout, node.cluster.max_election_timeout)
 
         # Increment current term and vote for self
         self._node.data.current_term += 1
         self._node.data.voted_for = self._node.id
         # Keep track of voters and calculate vote target
         self.voters = set([self._node.id])
-        self.vote_target = (len(self._node.peers_rpc) // 2) + 1
-
         # Broadcast RequestVote RPCs to peers
-        with ThreadPoolExecutor() as executor:
-            for peer_id, peer_addr in self._node.peers_rpc.items():
-                executor.submit(self.broadcast_rpc, peer_id, peer_addr)
+        self.broadcast_rpc()
 
     def on_expire(self):
         """
@@ -87,10 +81,10 @@ class Candidate(State):
         elif res.vote_granted:
             # Add voter to set and become leader if enough votes are received
             self.voters.add(res.id)
-            if len(self.voters) >= self.vote_target:
+            if len(self.voters) >= self._node.cluster.vote_target:
                 self.become_leader()
 
-    def broadcast_rpc(self, peer_id, peer_addr):
+    def call_rpc(self, peer_id, peer_addr):
         """
         Broadcasts RequestVote RPCs to peers.
 

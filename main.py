@@ -1,74 +1,60 @@
-"""
-Example integration of this raft module. KeyValueStoreMachine and FileDatabase
-can be re-implemented to fit in a new project. node.get_request and 
-node.post_request methods are also rpc exposed but since a the node.append_entry
-and node.request_vote methods are also exposed, this is not recommended.
-
-You can check KeyValueStoreMachine and FileDatabase implementations from code.
-
-List of required libraries:
-- rpyc
-- pydantic
-"""
-
-from concurrent.futures import ThreadPoolExecutor
 from pydantic import BaseModel
 from fastapi import FastAPI
 import uvicorn
 
-from raft.utils.machine import KeyValueStoreMachine  # Custom machine implementation
-from raft.utils.database import FileDatabase  # Custom database implementation
-from raft.node import RaftNode  # Raft consensus node implementation
-import config  # Configuration settings
+from raft.utils.models import ClusterConfigs
+from raft.cluster import RaftCluster
 
-# Initialize a Raft node with custom machine and database implementations
-node = RaftNode(Machine=KeyValueStoreMachine, Database=FileDatabase)
-
-# Initialize a FastAPI application
+cluster = RaftCluster()
 app = FastAPI()
 
-# Define a data model for post request
-class Command(BaseModel):
-    key: str
-    value: str
+
+class Configs(BaseModel):
+    min_election_timeout: float = 1
+    max_election_timeout: float = 2
+    heartbeat_interval: float = 0.1
+    database_configs: dict = {"database_write": 10, "reset": True}
+    machine_configs: dict = dict()
+
+
+class Node(BaseModel):
+    host: str = "peer"
+    rpc_port: int = 1500
+    exposed_port: int = 500
+
 
 @app.get('/')
-async def get_information():
-    """Route to get information about the Raft node"""
-    return {
-        "node id": node.id,
-        "current leader": node.current_leader['id'],
-        "current term": node.data.current_term,
-        "commit index": node.commit_index,
-        "last applied": node.last_applied,
-        "total log count": len(node.data.logs.logs)
-    }
+async def get_informations():
+    return cluster.check_nodes()
 
-@app.get('/storage')
-def get_value(key: str):
-    """Route to retrieve a value from the Raft node's storage"""
-    res, is_leader = node.get_request(command={"key": key})
-    if is_leader:
-        return {"response": res, "valid": node.last_applied == len(node.data.logs.logs) - 1}
-    if res:
-        return {"leader_url": f"http://{res[0]}:{res[1]}/storage?key={key}"}    
-    return {"leader_url": f"404 Not Found", "key": key}
 
-@app.post('/storage')
-def post_value(command: Command):
-    """Route to store a key-value pair in the Raft node's storage"""
-    res, is_leader = node.post_request(command.model_dump())
-    if is_leader:
-        return {"log_index": res, "command": command}
-    if res:
-        return {"leader_url": f"http://{res[0]}:{res[1]}/storage", "request_body": command}
-    return {"leader_url": f"404 Not Found", "request_body": command}
+@app.get('/node')
+def get_nodes():
+    return cluster.nodes
+
+
+@app.post('/node')
+def add_node(node: Node):
+    cluster.add_node(**node.model_dump())
+
+
+@app.post('/config')
+def new_configs(new_configs: Configs):
+    cluster.change_configs(ClusterConfigs(
+        **(new_configs.model_dump()),
+        peers=cluster.nodes.values()
+    ))
+
+
+@app.post('/node/{node_id}/start')
+def start_node(node_id: int):
+    cluster.start_node(node_id)
+
+
+@app.post('/node/{node_id}/stop')
+def stop_node(node_id: int):
+    cluster.stop_node(node_id)
 
 
 if __name__ == "__main__":
-    # Start Raft node and FastAPI server concurrently
-    with ThreadPoolExecutor() as executor:
-        # Start Raft node
-        executor.submit(node.run)
-        # Start FastAPI server
-        executor.submit(uvicorn.run, app, host="0.0.0.0", port=config.NODE_HTTP_PORT)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

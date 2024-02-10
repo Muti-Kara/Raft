@@ -1,4 +1,6 @@
-from .rpc_models import AppendEntry, RequestVote, AppendEntryResponse, RequestVoteResponse
+from concurrent.futures import ThreadPoolExecutor
+
+from raft.utils.models import AppendEntry, RequestVote, AppendEntryResponse, RequestVoteResponse
 from raft.utils.timer import FunctionTimer
 
 
@@ -18,7 +20,7 @@ class State:
             max_timeout: Maximum timeout for state transitions.
         """
         from raft.node import RaftNode
-        print(self.__class__.__name__, flush=True)
+        self.name = str(self.__class__.__name__)
         self._node: RaftNode = node
         self._node.state = self
         self._timer = FunctionTimer(min_timeout, max_timeout, self.on_expire)
@@ -125,15 +127,10 @@ class State:
         """
         return
 
-    def broadcast_rpc(self, peer_id, peer_addr):
-        """
-        Method to broadcast RPC messages to peers.
+    def broadcast_rpc(self):
+        with ThreadPoolExecutor() as executor:
+            for peer in self._node.peers.values():
+                executor.submit(self.call_rpc, peer.id, peer.rpc_address)
 
-        Args:
-            peer_id: The ID of the peer.
-            peer_addr: The address of the peer.
-
-        Returns:
-            Any: Additional information as needed.
-        """
+    def call_rpc(self, peer_id, peer_addr):
         return

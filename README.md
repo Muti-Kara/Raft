@@ -5,7 +5,7 @@ This repository contains an implementation of the Raft consensus algorithm, desi
 - [x] Leader Election
 - [x] Log Replication
 - [x] Support for customizable state machines
-- [x] An external example API for recording logs for a distributed key-value store
+- [x] An example API for recording logs for a distributed key-value store
 - [ ] Adding or removing members from the cluster
 
 Currently nodes cluster is creating a simple distributed key-value store. If you'd like to use this for other purposes, look at the [Integration](#integration) section.

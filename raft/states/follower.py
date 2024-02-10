@@ -1,7 +1,5 @@
-from .rpc_models import AppendEntry, RequestVote
-from raft.utils.logs import LogList
+from raft.utils.models import AppendEntry, RequestVote, LogList
 from .state import State
-import config
 
 
 class Follower(State):
@@ -16,7 +14,7 @@ class Follower(State):
         Args:
             node: The Raft node associated with this state.
         """
-        super().__init__(node, config.MIN_ELECTION_TIMEOUT, config.MAX_ELECTION_TIMEOUT)
+        super().__init__(node, node.cluster.min_election_timeout, node.cluster.max_election_timeout)
 
     def on_expire(self):
         """

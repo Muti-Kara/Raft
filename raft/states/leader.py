@@ -2,9 +2,8 @@ from concurrent.futures import ThreadPoolExecutor
 import pickle
 import rpyc
 
-from .rpc_models import AppendEntry, RequestVote, AppendEntryResponse
+from raft.utils.models import AppendEntry, RequestVote, AppendEntryResponse
 from .state import State
-import config
 
 
 class Leader(State):
@@ -19,10 +18,10 @@ class Leader(State):
         Args:
             node: The Raft node associated with this state.
         """
-        super().__init__(node, config.HEARTBEAT_INTERVAL, config.HEARTBEAT_INTERVAL)
+        super().__init__(node, node.cluster.heartbeat_interval, node.cluster.heartbeat_interval)
         # Initialize next and match index for each peer
-        self.next_idx = {id: len(self._node.data.logs.logs) for id, _ in self._node.peers_rpc.items()}
-        self.match_idx = {id: 0 for id, _ in self._node.peers_rpc.items()}
+        self.next_idx = {peer.id: len(self._node.data.logs.logs) for peer in self._node.peers.values()}
+        self.match_idx = {peer.id: 0 for peer in self._node.peers.values()}
         # Set current leader information
         self._node.current_leader["id"] = self._node.id
 
@@ -34,9 +33,7 @@ class Leader(State):
         # Reset timer
         self._timer.reset()
         # Send AppendEntries RPCs to all peers
-        with ThreadPoolExecutor() as executor:
-            for peer_id, peer_addr in self._node.peers_rpc.items():
-                executor.submit(self.broadcast_rpc, peer_id, peer_addr)
+        self.broadcast_rpc()
 
     def on_append_entry(self, ae: AppendEntry):
         """
@@ -81,31 +78,13 @@ class Leader(State):
             self._node.apply_commands()
 
     def on_request_vote(self, rv: RequestVote):
-        """
-        Handles incoming RequestVote RPC messages.
-
-        Args:
-            rv (RequestVote): The RequestVote message.
-
-        Returns:
-            bool: True if the vote is granted, False otherwise.
-        """
-        # Leader becomes follower if it receives a valid RequestVote message with higher term
         if self._node.data.current_term >= rv.term:
             return False
         self.become_follower(rv.term)
         return True
 
-    def broadcast_rpc(self, peer_id, peer_addr):
-        """
-        Broadcasts AppendEntries RPCs to peers.
-
-        Args:
-            peer_id: The ID of the peer.
-            peer_addr: The address of the peer.
-        """
+    def call_rpc(self, peer_id, peer_addr):
         try:
-            # Attempt RPC connection and send AppendEntry message
             rpyc.connect(*peer_addr).root.append_entry(
                 pickle.dumps(AppendEntry(
                     term=self._node.data.current_term,
