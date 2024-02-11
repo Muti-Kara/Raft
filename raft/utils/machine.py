@@ -1,5 +1,5 @@
 class BaseMachine:
-    def init(self, config: dict):
+    def configure(self, config: dict):
         raise NotImplementedError
 
     def post_request(self, command):

@@ -28,11 +28,6 @@ async def get_informations():
     return cluster.check_nodes()
 
 
-@app.get('/node')
-def get_nodes():
-    return cluster.nodes
-
-
 @app.post('/node')
 def add_node(node: Node):
     cluster.add_node(**node.model_dump())

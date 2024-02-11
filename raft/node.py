@@ -28,33 +28,41 @@ class RaftNode(rpyc.Service):
 
     @rpyc.exposed
     def append_entry(self, append_entry, append_entry_callback):
-        append_entry_callback(pickle.dumps(AppendEntryResponse(
-            term=self.data.current_term,
-            id=self.id,
-            acknowledge=self.state.on_append_entry(pickle.loads(append_entry))
-        )))
+        print(pickle.loads(append_entry), flush=True)
+        try:
+            append_entry_callback(pickle.dumps(AppendEntryResponse(
+                term=self.data.current_term,
+                id=self.id,
+                acknowledge=self.state.on_append_entry(pickle.loads(append_entry))
+            )))
+        except Exception as e:
+            print(e, flush=True)
         
     @rpyc.exposed
     def request_vote(self, request_vote, request_vote_callback):
-        if time.time() > self.current_leader["heartbeat"]:
-            request_vote_callback(pickle.dumps(RequestVoteResponse(
-                term=self.data.current_term,
-                id=self.id,
-                vote_granted=self.state.on_request_vote(pickle.loads(request_vote))
-            )))
+        print(pickle.loads(request_vote), flush=True)
+        try:
+            if time.time() > self.current_leader["heartbeat"]:
+                request_vote_callback(pickle.dumps(RequestVoteResponse(
+                    term=self.data.current_term,
+                    id=self.id,
+                    vote_granted=self.state.on_request_vote(pickle.loads(request_vote))
+                )))
+        except Exception as e:
+            print(e, flush=True)
 
     @rpyc.exposed
     def cluster_config(self, data):
         self.cluster: ClusterConfigs = pickle.loads(data)
         self.peers = {peer.id: peer for peer in self.cluster.peers if peer.id != self.id}
-        self.data.init(self.cluster.database_configs)
-        self.machine.init(self.cluster.machine_configs)
+        self.data.configure(self.cluster.database_configs)
+        self.machine.configure(self.cluster.machine_configs)
     
     @rpyc.exposed
     def cluster_ping(self):
         return pickle.dumps(ClusterPingResponse(
             term=self.data.current_term,
-            state=self.state.name,
+            state=self.state.__class__.__name__,
             leader=self.current_leader["id"],
             commit_index=self.commit_index,
             last_applied=self.last_applied,
@@ -83,10 +91,18 @@ class RaftNode(rpyc.Service):
         return None, False
 
     def append_entry_callback(self, response):
-        self.state.on_append_entry_callback(pickle.loads(response))
+        print(pickle.loads(response), flush=True)
+        try:
+            self.state.on_append_entry_callback(pickle.loads(response))
+        except Exception as e:
+            print(e, flush=True)
 
     def request_vote_callback(self, response):
-        self.state.on_request_vote_callback(pickle.loads(response))
+        print(pickle.loads(response), flush=True)
+        try:
+            self.state.on_request_vote_callback(pickle.loads(response))
+        except Exception as e:
+            print(e, flush=True)
 
     def set_leader(self, leader_id):
         self.current_leader["id"] = leader_id

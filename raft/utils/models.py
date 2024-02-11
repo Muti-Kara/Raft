@@ -44,7 +44,7 @@ class ClusterConfigs(BaseModel):
 class ClusterPingResponse(BaseModel):
     term: int
     state: str
-    leader: str
+    leader: str | None
     commit_index: int
     last_applied: int
     last_log_idx: int
