@@ -12,7 +12,7 @@ services:
   peer1:
     container_name: peer1
     build: .
-    command: python /app/example_node.py
+    command: python /app/node.py
     ports:
       - 15001:15001
       - 5001:5001
@@ -24,7 +24,7 @@ services:
   peer2:
     container_name: peer2
     build: .
-    command: python /app/example_node.py
+    command: python /app/node.py
     ports:
       - 15002:15002
       - 5002:5002
@@ -36,7 +36,7 @@ services:
   peer3:
     container_name: peer3
     build: .
-    command: python /app/example_node.py
+    command: python /app/node.py
     ports:
       - 15003:15003
       - 5003:5003
@@ -48,7 +48,7 @@ services:
   peer4:
     container_name: peer4
     build: .
-    command: python /app/example_node.py
+    command: python /app/node.py
     ports:
       - 15004:15004
       - 5004:5004
@@ -60,7 +60,7 @@ services:
   peer5:
     container_name: peer5
     build: .
-    command: python /app/example_node.py
+    command: python /app/node.py
     ports:
       - 15005:15005
       - 5005:5005
