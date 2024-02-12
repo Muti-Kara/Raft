@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='raft-cluster',
-    version='0.0.3',
+    version='0.0.4',
     author='Muti-Kara',
     author_email='muti.kara@ug.bilkent.edu.tr',
     description='A Raft library.',
@@ -10,7 +10,6 @@ setup(
     long_description_content_type='text/markdown',
     url='https://github.com/Muti-Kara/Raft',
     packages=find_packages(),
-    package_data={'': ['main.py']},  # Include main.py at the root level
     install_requires=[
         'pydantic',
         'fastapi',
@@ -19,7 +18,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'run-cluster-manager=main:main',
+            'run-cluster-manager=raft.main:main',
         ],
     },
     classifiers=[
