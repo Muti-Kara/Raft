@@ -106,15 +106,15 @@ Contributions are welcome! If you'd like to contribute to this Raft implementati
 
 The Raft consensus algorithm implementation is organized into several packages, each serving a specific purpose. Here's an overview of the main packages and their contents:
 
-- **main.py**: Main server for cluster management.
-  - Responsible for handling HTTP requests and managing the cluster's configuration and state transitions.
-
 - **node.py**: Example concrete implementation of a Raft node for a simple key-value store.
   - Demonstrates how to use the Raft algorithm to build a distributed system with basic key-value store functionality.
 
 - **raft**: Core packages for Raft consensus algorithm.
   - Contains essential classes and utilities for implementing the Raft consensus algorithm.
 
+  - **main.py**: Main server for cluster management.
+    - Responsible for handling HTTP requests and managing the cluster's configuration and state transitions.
+  
   - **node.py**: Contains the `RaftNode` class.
     - This class represents a single node in the Raft cluster and provides methods for handling RPC requests.
 
