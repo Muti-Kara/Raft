@@ -40,8 +40,6 @@ Raft involves state transitions between followers, candidates, and leaders, depe
 
 ## Installation
 
-## Installation
-
 To use this implementation of Raft, follow these steps:
 
 1. Clone the repository:
