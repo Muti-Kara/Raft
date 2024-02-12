@@ -40,7 +40,26 @@ Raft involves state transitions between followers, candidates, and leaders, depe
 
 ## Installation
 
-To use this implementation of Raft, follow these steps:
+To use this implementation of Raft, you have two options:
+
+### Option 1: Install from PyPI
+
+1. Install the `raft-cluster` package via pip:
+    ```bash
+    pip install raft-cluster
+    ```
+
+2. Run the cluster manager using the following command:
+    ```bash
+    run-cluster-manager
+    ```
+
+3. Use docker-compose to run the peers:
+    ```bash
+    docker-compose up
+    ```
+
+### Option 2: Install from Source
 
 1. Clone the repository:
     ```bash

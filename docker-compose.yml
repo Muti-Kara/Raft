@@ -4,7 +4,7 @@ services:
   cluster:
     container_name: cluster
     build: .
-    command: python /app/main.py
+    command: python /app/raft/main.py
     ports:
       - 8000:8000
     volumes:
