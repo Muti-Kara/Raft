@@ -84,4 +84,9 @@ def stop_node(node_id: str):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import argparse
+    parser = argparse.ArgumentParser(description="Raft Cluster Manager")
+    parser.add_argument("-h", "--host", default="0.0.0.0", help="Host address")
+    parser.add_argument("-p", "--port", default=8000, type=int, help="Port number")
+    args = parser.parse_args()
+    uvicorn.run(app, host=args.host, port=args.port)
