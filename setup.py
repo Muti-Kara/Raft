@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='raft-cluster',
-    version='0.0.4',
+    version='0.1.0',
     author='Muti-Kara',
     author_email='muti.kara@ug.bilkent.edu.tr',
     description='A Raft library.',
