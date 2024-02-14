@@ -53,6 +53,10 @@ To use this implementation of Raft, you have two options:
     ```bash
     run-cluster-manager
     ```
+    
+    Optional flags:
+    - `--host`: Specify the host address. Default is `0.0.0.0`.
+    - `--port`: Specify the port number. Default is `8000`.
 
 ### Option 2: Install from Source
 
